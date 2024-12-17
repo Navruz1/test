@@ -155,3 +155,172 @@ async def send_code(message: types.Message):
     else:
         await message.answer("Error number!")
 
+# если код верификации верный, то сохраняет статус verified и спрашивает локацию
+async def check_code(message: types.Message):
+    user_id = message.from_user.id
+    language = user_data[user_id]["language"]
+    code = message.text
+    verification_code = user_data[user_id]["verification_code"]
+    if code == verification_code:
+        user_data[user_id]["status"] = "verified"
+        bot_answer = answers[language][4] #Номер подтверждён
+        del user_data[user_id]["verification_code"]
+        print(user_data)
+        await message.answer(bot_answer)
+        await ask_location(message)
+    else:
+        bot_answer = answers[language][5] #Неверный код. Попробуйте снова
+        await message.answer(bot_answer)
+
+# сохраняет локацию в user_data и выводит главное меню
+async def ask_location(message : types.Message):
+    user_id = message.from_user.id
+    if "location" in user_data[user_id]:
+        del user_data[user_id]["location"]
+    if "holat" in user_data[user_id]:
+        del user_data[user_id]["holat"]
+    button = [
+        [types.KeyboardButton(text="Отправить локацию", request_location=True)]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    await message.answer("Укажите свою локацию", reply_markup=keyboard)
+
+async def info_location(message : types.Message):
+    user_id = message.from_user.id
+    if "location" not in user_data[user_id]:
+        if message.location is not None:
+            latitude = message.location.latitude
+            longitude = message.location.longitude
+            location = {
+                'latitude' : latitude,
+                'longitude' : longitude
+            }
+        else:
+            location = message.text
+        user_data[user_id]['location'] = location
+    button = [
+        [types.KeyboardButton(text="Сделать заказ")],
+        [types.KeyboardButton(text="Назад")]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    user_data[user_id]["holat"] = "kategoriyalar"
+    await message.answer("Начали?", reply_markup=keyboard)
+    print(user_data)
+
+menu = {
+    "Бургеры" : {"Чизбургер" : 27000, "Чилибургер" : 26000, "Гамбургер" : 25000},
+    "Курочка" : {"Крылышки" : 30000, "Куриные ножки" : 200, "Стрипс" : 300},
+    "Напитки" : {"Ice-Tea" : 17000, "Чай" : 4000, "Кола" : 17000}
+}
+
+async def show_menu(message : types.Message):
+    user_id = message.from_user.id
+    user_data[user_id]["holat"] = "tovarlar"
+    if message.text == "Сделать заказ" or "tovar" in user_data[user_id]["holat"]:
+        if "basket" not in user_data[user_id]:
+            user_data[user_id]["basket"] = {}
+        buttons = []
+        for category in menu:
+            button = [types.KeyboardButton(text=category)]
+            buttons.append(button)
+        button_back = [types.KeyboardButton(text="Назад")]
+        buttons.append(button_back)
+        keyboard = types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        await message.answer("Выберите категорию", reply_markup=keyboard)
+        print(user_data)
+    elif message.text == "Назад":
+        await ask_location(message)
+
+async def check_menu(message : types.Message):
+    user_id = message.from_user.id
+    category = message.text
+    user_data[user_id]["holat"] = "tovar"
+    if category in menu:
+        user_data[user_id]["category"] = category
+        await show_items(message)
+    elif category == "Назад":
+        await info_location(message)
+
+async def show_items(message : types.Message):
+    user_id = message.from_user.id
+    category = user_data[user_id]["category"]
+    buttons = []
+    for item in menu[category]:
+        button = [types.KeyboardButton(text=item)]
+        buttons.append(button)
+    button_back = [types.KeyboardButton(text="Назад")]
+    buttons.append(button_back)
+    keyboard = types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+    user_data[user_id]["holat"] = "tovar"
+    await message.answer("Что закажете?", reply_markup=keyboard)
+    print(user_data)
+
+async def check_items(message : types.Message):
+    user_id = message.from_user.id
+    item = message.text
+    category = user_data[user_id]["category"]
+    if item in menu[category]:
+        user_data[user_id]["item"] = item
+        price = menu[category][item]
+        buttons = [
+            [types.InlineKeyboardButton(text=f"-", callback_data=f"minus_{item}"),
+             types.InlineKeyboardButton(text=f"1", callback_data=f"count_{item}"),
+             types.InlineKeyboardButton(text=f"+", callback_data=f"plus_{item}")],
+            [types.InlineKeyboardButton(text=f"Добавить в корзину", callback_data=f"add_{item}")]
+        ]
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+        await message.answer(f"Товар: {item}\n"
+                             f"Цена: {price} сум", reply_markup=keyboard)
+        print(user_data)
+    elif item == "Назад":
+        await show_menu(message)
+
+
+
+# InputMedia
+# os - работа с проводником
+
+count = 1
+@dp.callback_query(lambda c: c.data.startswith(('plus', 'minus', 'add')))
+async def check_callback_data(callback : types.CallbackQuery):
+    user_id = callback.from_user.id
+    command, item = callback.data.split("_")
+    global count
+    if command == "plus":
+        count += 1
+    elif command == "minus":
+        if count > 1:
+            count -= 1
+    elif command == "add":
+        if item in user_data[user_id]["basket"]:
+            user_data[user_id]["basket"][item] += count
+        else:
+            user_data[user_id]["basket"][item] = count
+        count = 1
+
+        print(user_data)
+    buttons = [
+        [types.InlineKeyboardButton(text=f"-", callback_data=f"minus_{item}"),
+         types.InlineKeyboardButton(text=f"{count}", callback_data=f"count_{item}"),
+         types.InlineKeyboardButton(text=f"+", callback_data=f"plus_{item}")],
+        [types.InlineKeyboardButton(text=f"Добавить в корзину", callback_data=f"add_{item}")]
+    ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    category = user_data[user_id]["category"]
+    price = menu[category][item]
+    price = price * count
+    try:
+        await callback.message.edit_text(f"Товар: {item}\n"
+                                         f"Цена: {price} сум", reply_markup=keyboard)
+    except:
+        pass
+    print("Count:", count)
+
+
+
+async def main():
+    await dp.start_polling(bot)
+
+print("The bot is running...")
+asyncio.run(main())
+
