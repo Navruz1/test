@@ -104,3 +104,54 @@ async def start(message: types.Message):
                          f"{answers["O'zbekcha"][0]}\n\n"
                          f"{answers["English"][0]}", reply_markup=keyboard)
     print(user_data)
+
+# спрашивает номер
+async def send_number(message: types.Message):
+    user_id = message.from_user.id
+    language = message.text
+    user_data[user_id]["language"] = language
+    print(user_data)
+    bot_answer = answers[language][2] #Отправить номер
+    button = [
+        [types.KeyboardButton(text=bot_answer, request_contact=True)]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    bot_answer = answers[language][1] # Пожалуйста, введите свой телефон номер телефона
+    await message.answer(bot_answer, reply_markup=keyboard)
+
+# сохраняет номер в user_data, генерирует и сохраняет код верификации и спрашивает его
+async def send_code(message: types.Message):
+    user_id = message.from_user.id
+    language = user_data[user_id]["language"]
+    if message.contact is not None:
+        phone = message.contact.phone_number
+    else:
+        phone = message.text
+    ok = True
+    if len(phone) == 12 or len(phone) == 13:
+        if phone[0:4] == "+998" or phone[0:3] == "998":
+            for num in phone:
+                if num not in "+0123456789":
+                    ok = False
+                    break
+        else:
+            ok = False
+    else:
+        ok = False
+    if ok:
+        user_data[user_id]["phone"] = phone
+        try:
+            token = login_and_token(email, password)
+            send_sms(token, phone)
+            await message.answer("Введите код верификации, отправленный на ваш номер")
+        except:
+            await message.answer("Возникла ошибка при отправке смс")
+
+        verification_code = str(randint(10, 99))
+        user_data[user_id]["verification_code"] = verification_code
+        print(user_data)
+        bot_answer = answers[language][3]  # Введите код верификации, отправленный на ваш номер
+        await message.answer(bot_answer + verification_code)
+    else:
+        await message.answer("Error number!")
+
